@@ -71,7 +71,7 @@ namespace PrivateGameplayMods
                     return;
 
                 if ( ___m_skillData.TryGetValue(skillType, out Skills.Skill skill) )
-                    factor *= 1.0f + 5.0f * skill.m_level / 100.0f;
+                    factor *= 1.0f + 4.0f * skill.m_level / 100.0f;
             }
         }
 
@@ -297,7 +297,7 @@ namespace PrivateGameplayMods
         private class PieceContainerExpandOnLoad
         {
             [HarmonyPrefix]
-            private static void AddItemPrefix(ItemDrop.ItemData item, int amount, int x, int y, int ___m_width, int ___m_height)
+            private static void AddItemPrefix(ItemDrop.ItemData item, int amount, int x, int y, ref int ___m_width, ref int ___m_height)
             {
                 if ( x >= ___m_width )
                     ___m_width = x+1;
@@ -375,7 +375,7 @@ namespace PrivateGameplayMods
                     }
                     catch (System.Exception)
                     {
-                        ZLog.Log("Terrain excepton");
+                        ZLog.Log("Terrain exception");
                     }
                 }
             }
