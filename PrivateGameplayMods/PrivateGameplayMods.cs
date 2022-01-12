@@ -12,7 +12,7 @@ namespace PrivateGameplayMods
     public class PrivateGameplayMods : BaseUnityPlugin
     {
         public const string Package = "CacoFFF.valheim.PrivateGameplayMods";
-        public const string Version = "0.0.4";
+        public const string Version = "0.0.5";
         public const string ModName = "Private Gameplay Mods";
 
         private static ConfigEntry<bool> _EnableSkillMod;
@@ -22,6 +22,7 @@ namespace PrivateGameplayMods
         private static ConfigEntry<bool> _EnableDropMod;
         private static ConfigEntry<bool> _EnableItemLevels;
         private static ConfigEntry<bool> _EnableHalfMetalUpgrade;
+        private static ConfigEntry<bool> _EnableLargeContainers;
         private static ConfigEntry<float> _SetPlaceDistance;
 
         private Harmony _harmony;
@@ -38,6 +39,7 @@ namespace PrivateGameplayMods
             _EnableDropMod = Config.Bind("Global", "EnableDropMod", true, "Enable drop mod.");
             _EnableItemLevels = Config.Bind("Global", "EnableItemLevels", true, "Enable item levels.");
             _EnableHalfMetalUpgrade = Config.Bind("Global", "EnableHalfMetalUpgrade", true, "Enable half metal upgrade requirements.");
+            _EnableLargeContainers = Config.Bind("Global", "EnableLargeContainers", true, "Enable larger containers.");
             _SetPlaceDistance = Config.Bind("Global", "SetPlaceDistance", 5.0f, "Set Place Distance.");
 
             _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), null);
@@ -101,7 +103,8 @@ namespace PrivateGameplayMods
                 float Factor = 0.8f;
                 if ( !hit.HaveAttacker() || !hit.GetAttacker().IsPlayer() )
                     Factor *= 0.5f;
-                hit.m_damage.m_damage *= Factor;
+                hit.m_damage.Modify(Factor);
+/*                hit.m_damage.m_damage *= Factor;
                 hit.m_damage.m_blunt *= Factor;
                 hit.m_damage.m_chop *= Factor;
                 hit.m_damage.m_fire *= Factor;
@@ -111,6 +114,7 @@ namespace PrivateGameplayMods
                 hit.m_damage.m_spirit *= Factor;
                 hit.m_damage.m_poison *= Factor;
                 hit.m_damage.m_pickaxe *= Factor;
+                hit.m_damage.m_pierce *= Factor;*/
             }
         }
 
@@ -134,6 +138,7 @@ namespace PrivateGameplayMods
             [HarmonyPostfix]
             private static void AwakePostfix()
             {
+                bool RecipesFound = false;
                 if ( (ObjectDB.instance != null) && (ObjectDB.instance.m_recipes != null) )
                     foreach (Recipe recipe in ObjectDB.instance.m_recipes )
                     {
@@ -141,6 +146,7 @@ namespace PrivateGameplayMods
                         {
                             if( (recipe != null) && (recipe.m_resources != null) )
                             {
+                                RecipesFound = true;
                                 foreach(Piece.Requirement requirement in recipe.m_resources)
                                 {
                                     if((requirement.m_amountPerLevel > 1)
@@ -153,8 +159,8 @@ namespace PrivateGameplayMods
                                           || (requirement.m_resItem.name == "Flametal")
                                           || (requirement.m_resItem.name == "BlackMetal")))
                                     {
-                                        if ( recipe.m_item != null )
-                                            ZLog.Log("Lowering upgrade reqs for " + recipe.m_item.name + ": " + requirement.m_resItem.name);
+ //                                       if ( recipe.m_item != null )
+  //                                          ZLog.Log("Lowering upgrade reqs for " + recipe.m_item.name + ": " + requirement.m_resItem.name);
                                         requirement.m_amountPerLevel = (requirement.m_amountPerLevel + 1) / 2;
                                     }
                                 }
@@ -164,10 +170,11 @@ namespace PrivateGameplayMods
                     }
 
                 // Already initialized (?)
-                if(OozerObject != null)
+                if ( !RecipesFound || OozerObject != null )
                     return;
 
                 Object[] array = Resources.FindObjectsOfTypeAll(typeof(GameObject));
+                List<Pickable> PlantPickables = new List<Pickable>();
                 for(int i = 0; i < array.Length; i++)
                 {
                     GameObject gameObject = (GameObject)array[i];
@@ -187,6 +194,7 @@ namespace PrivateGameplayMods
                             }
                         }
                     
+
                         Plant plant = gameObject.GetComponent<Plant>();
                         if ( plant != null )
                         {
@@ -194,32 +202,17 @@ namespace PrivateGameplayMods
                             {
                                 if ( prefab == null )
                                     continue;
-                                Pickable pickable = prefab.GetComponent<Pickable>();
-                                if ( pickable != null && pickable.m_itemPrefab != null && pickable.m_amount > 1 )
-                                {
-                                    ZLog.Log("Increasing drop count for " + plant.name + ": " + pickable.m_itemPrefab);
-                                    float NewAmount = (float)pickable.m_amount * 1.50f + 0.50f;
-
-                                    // Increase integer part
-                                    pickable.m_amount = (int)NewAmount;
-                                    NewAmount -= (float)pickable.m_amount;
-
-                                    // Add chance part (doesn't appear to work)
-                                    if ( NewAmount > 0.01f )
-                                    {
-                                        if ( pickable.m_extraDrops == null )
-                                            pickable.m_extraDrops = new DropTable();
-                                        DropTable.DropData NewDrop = new DropTable.DropData();
-                                        NewDrop.m_item = pickable.m_itemPrefab;
-                                        NewDrop.m_stackMin = 1;
-                                        NewDrop.m_stackMax = 1;
-                                        NewDrop.m_weight = 1.0f;
-                                        pickable.m_extraDrops.m_drops.AddItem(NewDrop);
-                                        pickable.m_extraDrops.m_dropChance = NewAmount;
-                                    }
-                                }
-                            }
+//                                ZLog.Log("Plant Prefab for " + plant.name + ": " + prefab);
+                                Pickable pickablePl = prefab.GetComponent<Pickable>();
+                                if (pickablePl != null && pickablePl.m_itemPrefab != null && pickablePl.m_amount > 2 )
+                                    PlantPickables.Add(pickablePl);
+                             }
                         }
+
+                        Pickable pickable = gameObject.GetComponent<Pickable>();
+                        if ( pickable != null && pickable.m_itemPrefab != null 
+                            && (pickable.m_itemPrefab.name == "Flax" || pickable.m_itemPrefab.name == "Barley") )
+                            PlantPickables.Add(pickable);
                     }
 
                     if ( _EnableItemLevels.Value )
@@ -232,7 +225,94 @@ namespace PrivateGameplayMods
  
                 }
 
+                foreach ( Pickable pickable in PlantPickables )
+                {
+                    float NewAmount = (float)pickable.m_amount * 1.25f + 0.55f;
+                    ZLog.Log("Increasing drop count for " + pickable.name + ": " + pickable.m_itemPrefab.name + " " + pickable.m_amount + " > " + NewAmount);
 
+                    // Increase integer part
+                    pickable.m_amount = (int)NewAmount;
+                    NewAmount -= (float)pickable.m_amount;
+
+                    // Add chance part (doesn't appear to work)
+                    if(NewAmount > 0.01f)
+                    {
+                        if(pickable.m_extraDrops == null)
+                            pickable.m_extraDrops = new DropTable();
+                        DropTable.DropData NewDrop = new DropTable.DropData();
+                        NewDrop.m_item = pickable.m_itemPrefab;
+                        NewDrop.m_stackMin = 1;
+                        NewDrop.m_stackMax = 1;
+                        NewDrop.m_weight = 1.0f;
+                        pickable.m_extraDrops.m_drops.AddItem(NewDrop);
+                        pickable.m_extraDrops.m_dropChance = NewAmount;
+                    }
+                }
+            }
+        }
+
+        //
+        // Detect mountains
+        //
+        [HarmonyPatch(typeof(WorldGenerator), "FindMountains")]
+        private class MountainDetectorPatch
+        {
+            [HarmonyPostfix]
+            private static void FindMountainsPostfix( ref WorldGenerator __instance)
+            {
+                List<Vector2> Mountains = __instance.GetMountains();
+                foreach ( Vector2 Location in Mountains )
+                {
+                    float H = __instance.GetHeight(Location.x, Location.y);
+                    if ( H > 200.0f )
+                        ZLog.Log("Large Mountain at " + (int)(Location.x) + "," + (int)(Location.y) + " => " + (int)H);
+                }
+            }
+        }
+
+        //
+        // Piece awake mods:
+        // Ship, Cart larger containers
+        // Auto-expand containers instead of deleting items
+        // Reduce weight
+        //
+        [HarmonyPatch(typeof(Vagon), "UpdateLoadVisualization")]
+        private class PieceContainerExpandOnCreate
+        {
+            [HarmonyPostfix]
+            private static void UpdateLoadVisualizationPostfix(ref Vagon __instance)
+            {
+                if ( !_EnableLargeContainers.Value )
+                    return;
+                
+                Container CT = __instance.m_container;
+                if ( CT != null && CT.GetInventory() != null )
+                {
+                    Traverse.Create(CT.GetInventory()).Field("m_width").SetValue(8);
+                    Traverse.Create(CT.GetInventory()).Field("m_height").SetValue(5);
+                }
+            }
+        }
+        [HarmonyPatch(typeof(Inventory), "AddItem", new System.Type[] {typeof(ItemDrop.ItemData), typeof(int), typeof(int), typeof(int)})]
+        private class PieceContainerExpandOnLoad
+        {
+            [HarmonyPrefix]
+            private static void AddItemPrefix(ItemDrop.ItemData item, int amount, int x, int y, int ___m_width, int ___m_height)
+            {
+                if ( x >= ___m_width )
+                    ___m_width = x+1;
+                if ( y >= ___m_height )
+                    ___m_height = y+1;
+            }
+        }
+        [HarmonyPatch(typeof(Vagon), "SetMass")]
+        private class ReduceVagonWeight
+        {
+            [HarmonyPrefix]
+            private static void SetMassPrefix(ref float mass)
+            {
+                if ( _EnableLargeContainers.Value )
+                    mass *= 0.3f;
             }
         }
 
@@ -249,7 +329,56 @@ namespace PrivateGameplayMods
                 if ( __instance )
                     __instance.m_maxPlaceDistance = _SetPlaceDistance.Value;
             }
+        }
 
-        };
+        [HarmonyPatch(typeof(Terminal), "TryRunCommand")]
+        private class TerminalPatch
+        {
+            [HarmonyPostfix]
+            private static void TryRunCommandPostfix(ref Terminal __instance, string text)
+            {
+                if ( __instance == null )
+                    return;
+
+                string[] array = text.Split(' ');
+                if ( array[0] == "resetterrain" )
+                {
+                    ZLog.Log("Command: resetterrain");
+                    try
+                    {
+                        float radius = 10.0f;
+                        float.TryParse(array[1], out radius);
+                        if ( radius <= 0.0f )
+                            radius = 10.0f;
+                        foreach(TerrainModifier allInstance in TerrainModifier.GetAllInstances())
+                        {
+                            if( allInstance != null && Utils.DistanceXZ(Player.m_localPlayer.transform.position, allInstance.transform.position) < radius )
+                            {
+                                ZNetView component = Traverse.Create(allInstance).Field("m_nview").GetValue() as ZNetView;
+                                if( component != null && component.IsValid() )
+                                {
+                                    component.ClaimOwnership();
+                                    component.Destroy();
+                                }
+                            }
+                        }
+                        TerrainComp compiler = TerrainComp.FindTerrainCompiler(Player.m_localPlayer.transform.position);
+                        if ( compiler != null )
+                        {
+                            ZNetView component = Traverse.Create(compiler).Field("m_nview").GetValue() as ZNetView;
+                            if ( component != null && component.IsValid() )
+                            {
+                                component.ClaimOwnership();
+                                component.Destroy();
+                            }
+                        }
+                    }
+                    catch (System.Exception)
+                    {
+                        ZLog.Log("Terrain excepton");
+                    }
+                }
+            }
+        }
     }
 }
