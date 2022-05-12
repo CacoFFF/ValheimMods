@@ -12,7 +12,7 @@ namespace PrivateGameplayMods
     public class PrivateGameplayMods : BaseUnityPlugin
     {
         public const string Package = "CacoFFF.valheim.PrivateGameplayMods";
-        public const string Version = "0.0.5";
+        public const string Version = "0.0.6";
         public const string ModName = "Private Gameplay Mods";
 
         private static ConfigEntry<bool> _EnableSkillMod;
@@ -23,6 +23,8 @@ namespace PrivateGameplayMods
         private static ConfigEntry<bool> _EnableItemLevels;
         private static ConfigEntry<bool> _EnableHalfMetalUpgrade;
         private static ConfigEntry<bool> _EnableLargeContainers;
+        private static ConfigEntry<bool> _EnableFogReduction;
+        private static ConfigEntry<float> _OriginalTamedHPScale;
         private static ConfigEntry<float> _SetPlaceDistance;
 
         private Harmony _harmony;
@@ -40,6 +42,8 @@ namespace PrivateGameplayMods
             _EnableItemLevels = Config.Bind("Global", "EnableItemLevels", true, "Enable item levels.");
             _EnableHalfMetalUpgrade = Config.Bind("Global", "EnableHalfMetalUpgrade", true, "Enable half metal upgrade requirements.");
             _EnableLargeContainers = Config.Bind("Global", "EnableLargeContainers", true, "Enable larger containers.");
+            _EnableFogReduction = Config.Bind("Global", "EnableFogReduction", true, "Enable Fog Reduction.");
+            _OriginalTamedHPScale = Config.Bind("Global", "OriginalTamedHPScale", 2.0f, "HP Scale of wild tamed creatures.");
             _SetPlaceDistance = Config.Bind("Global", "SetPlaceDistance", 5.0f, "Set Place Distance.");
 
             _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), null);
@@ -134,6 +138,65 @@ namespace PrivateGameplayMods
         private class DropPatch
         {
             public static GameObject OozerObject;
+            public static GameObject FenringObject;
+            public static GameObject FenrisHairObject;
+
+            private static bool HasDrop( GameObject gameObject, string DropPrefabName)
+            {
+                CharacterDrop characterDrop = gameObject.GetComponent<CharacterDrop>();
+                if ( characterDrop != null )
+                {
+                    foreach( CharacterDrop.Drop drop in characterDrop.m_drops )
+                    {
+                        ZLog.Log("Has drop: " + drop.m_prefab.name + " chance: " + drop.m_chance );
+                        if ( (drop.m_prefab != null) && (drop.m_prefab.name == DropPrefabName) )
+                            return true;
+                    }
+                }
+                return false;
+            }
+
+            private static void AddMonsterDrops()
+            {
+                ZLog.Log("AddMonsterDrops()");
+                if ( !_EnableDropMod.Value )
+                    return;
+
+                // Set Iron drop chance to 100% on Oozers
+                if ( OozerObject != null )
+                {
+                    CharacterDrop characterDrop = OozerObject.GetComponent<CharacterDrop>();
+                    if ( characterDrop != null )
+                    {
+                        foreach (CharacterDrop.Drop drop in characterDrop.m_drops )
+                        {
+                            if ( drop.m_prefab != null && drop.m_prefab.name == "IronScrap" )
+                            {
+                                ZLog.Log("Setting BlobElite drop rate for IronScrap to 1.0");
+                                drop.m_chance = 1.0f;
+                            }
+                        }
+                    }
+                }
+
+                // Add Fenris hair drop to Fenring
+                if ( (FenringObject != null) && (FenrisHairObject != null) && !HasDrop(FenringObject,FenrisHairObject.name) )
+                {
+                    ZLog.Log("Adding Fenris hair drop to Fenring");
+                    CharacterDrop characterDrop = FenringObject.GetComponent<CharacterDrop>();
+                    if(characterDrop != null)
+                    {
+                        CharacterDrop.Drop newDrop = new CharacterDrop.Drop();
+                        newDrop.m_prefab          = FenrisHairObject;
+                        newDrop.m_amountMin       = 1;
+                        newDrop.m_amountMax       = 1;
+                        newDrop.m_chance          = 0.33f;
+                        newDrop.m_levelMultiplier = true;
+                        newDrop.m_onePerPlayer    = false;
+                        characterDrop.m_drops.Add(newDrop);
+                    }
+                }
+            }
 
             [HarmonyPostfix]
             private static void AwakePostfix()
@@ -142,11 +205,11 @@ namespace PrivateGameplayMods
                 if ( (ObjectDB.instance != null) && (ObjectDB.instance.m_recipes != null) )
                     foreach (Recipe recipe in ObjectDB.instance.m_recipes )
                     {
-                        if ( _EnableHalfMetalUpgrade.Value )
+                        if( (recipe != null) && (recipe.m_resources != null) )
                         {
-                            if( (recipe != null) && (recipe.m_resources != null) )
+                            RecipesFound = true;
+                            if( _EnableHalfMetalUpgrade.Value )
                             {
-                                RecipesFound = true;
                                 foreach(Piece.Requirement requirement in recipe.m_resources)
                                 {
                                     if((requirement.m_amountPerLevel > 1)
@@ -159,19 +222,21 @@ namespace PrivateGameplayMods
                                           || (requirement.m_resItem.name == "Flametal")
                                           || (requirement.m_resItem.name == "BlackMetal")))
                                     {
- //                                       if ( recipe.m_item != null )
-  //                                          ZLog.Log("Lowering upgrade reqs for " + recipe.m_item.name + ": " + requirement.m_resItem.name);
+//                                      if ( recipe.m_item != null )
+//                                          ZLog.Log("Lowering upgrade reqs for " + recipe.m_item.name + ": " + requirement.m_resItem.name);
                                         requirement.m_amountPerLevel = (requirement.m_amountPerLevel + 1) / 2;
                                     }
                                 }
-
                             }
                         }
                     }
 
                 // Already initialized (?)
                 if ( !RecipesFound || OozerObject != null )
+                {
+                    AddMonsterDrops();
                     return;
+                }
 
                 Object[] array = Resources.FindObjectsOfTypeAll(typeof(GameObject));
                 List<Pickable> PlantPickables = new List<Pickable>();
@@ -181,19 +246,12 @@ namespace PrivateGameplayMods
                     if ( _EnableDropMod.Value )
                     {
                         if (gameObject.name == "BlobElite")
-                        {
                             OozerObject = gameObject;
-                            CharacterDrop characterDrop = gameObject.GetComponent<CharacterDrop>();
-                            if ( characterDrop != null )
-                            {
-                                foreach ( CharacterDrop.Drop drop in characterDrop.m_drops )
-                                {
-                                    if ( drop.m_prefab != null && drop.m_prefab.name == "IronScrap" )
-                                        drop.m_chance = 1.0f;
-                                }
-                            }
-                        }
-                    
+                        else if (gameObject.name == "Fenring")
+                            FenringObject = gameObject;
+                        else if (gameObject.name == "WolfHairBundle")
+                            FenrisHairObject = gameObject;
+
 
                         Plant plant = gameObject.GetComponent<Plant>();
                         if ( plant != null )
@@ -206,7 +264,7 @@ namespace PrivateGameplayMods
                                 Pickable pickablePl = prefab.GetComponent<Pickable>();
                                 if (pickablePl != null && pickablePl.m_itemPrefab != null && pickablePl.m_amount > 2 )
                                     PlantPickables.Add(pickablePl);
-                             }
+                            }
                         }
 
                         Pickable pickable = gameObject.GetComponent<Pickable>();
@@ -224,8 +282,9 @@ namespace PrivateGameplayMods
 
  
                 }
+                AddMonsterDrops();
 
-                foreach ( Pickable pickable in PlantPickables )
+                foreach( Pickable pickable in PlantPickables )
                 {
                     float NewAmount = (float)pickable.m_amount * 1.25f + 0.55f;
                     ZLog.Log("Increasing drop count for " + pickable.name + ": " + pickable.m_itemPrefab.name + " " + pickable.m_amount + " > " + NewAmount);
@@ -234,7 +293,7 @@ namespace PrivateGameplayMods
                     pickable.m_amount = (int)NewAmount;
                     NewAmount -= (float)pickable.m_amount;
 
-                    // Add chance part (doesn't appear to work)
+                    // Add chance part
                     if(NewAmount > 0.01f)
                     {
                         if(pickable.m_extraDrops == null)
@@ -244,7 +303,7 @@ namespace PrivateGameplayMods
                         NewDrop.m_stackMin = 1;
                         NewDrop.m_stackMax = 1;
                         NewDrop.m_weight = 1.0f;
-                        pickable.m_extraDrops.m_drops.AddItem(NewDrop);
+                        pickable.m_extraDrops.m_drops.Add(NewDrop);
                         pickable.m_extraDrops.m_dropChance = NewAmount;
                     }
                 }
@@ -331,6 +390,27 @@ namespace PrivateGameplayMods
             }
         }
 
+        [HarmonyPatch(typeof(Character), "SetupMaxHealth")]
+        private class CharacterPatch_TamedHP
+        {
+            [HarmonyPostfix]
+            private static void SetupMaxHealthPostfix( ref Character __instance, ref bool ___m_tamed, ref ZNetView ___m_nview)
+            {
+                if ( (__instance != null) && ___m_tamed && (___m_nview != null) )
+                {
+                    // This creature has been fully tamed
+                    if ( ___m_nview.GetZDO().GetFloat("TameTimeLeft", -1.0f) == 0.0f )
+                    {
+                        float newHealth = __instance.m_health * (float)__instance.GetLevel() * Mathf.Max(1.0f,_OriginalTamedHPScale.Value);
+                        __instance.SetMaxHealth(newHealth);
+                        __instance.SetHealth(newHealth);
+                        ZLog.Log("Tamed creature HP scaled");
+                    }
+                }
+            }
+        }
+
+
         [HarmonyPatch(typeof(Terminal), "TryRunCommand")]
         private class TerminalPatch
         {
@@ -378,6 +458,32 @@ namespace PrivateGameplayMods
                         ZLog.Log("Terrain exception");
                     }
                 }
+            }
+        }
+
+        [HarmonyPatch(typeof(EnvMan), "Awake")]
+        private class FogPatch
+        {
+            private static float ScaleFog( float Value)
+            {
+                if ( Value > 0.01f )
+                    return Mathf.Sqrt(Value * 100.0f) / 100.0f;
+                return Value;
+            }
+
+            [HarmonyPrefix]
+            private static void AwakePrefix( ref EnvMan __instance)
+            {
+                if ( !_EnableFogReduction.Value )
+                    return;
+                foreach(EnvSetup env in __instance.m_environments)
+                {
+                    env.m_fogDensityNight   = ScaleFog(env.m_fogDensityNight);
+                    env.m_fogDensityMorning = ScaleFog(env.m_fogDensityMorning);
+                    env.m_fogDensityDay     = ScaleFog(env.m_fogDensityDay);
+                    env.m_fogDensityEvening = ScaleFog(env.m_fogDensityEvening);
+                }
+
             }
         }
     }
