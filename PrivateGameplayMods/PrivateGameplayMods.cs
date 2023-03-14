@@ -12,7 +12,7 @@ namespace PrivateGameplayMods
     public class PrivateGameplayMods : BaseUnityPlugin
     {
         public const string Package = "CacoFFF.valheim.PrivateGameplayMods";
-        public const string Version = "0.0.6";
+        public const string Version = "0.0.7";
         public const string ModName = "Private Gameplay Mods";
 
         private static ConfigEntry<bool> _EnableSkillMod;
@@ -74,8 +74,31 @@ namespace PrivateGameplayMods
                 if ( skillType == Skills.SkillType.None )
                     return;
 
-                if ( ___m_skillData.TryGetValue(skillType, out Skills.Skill skill) )
-                    factor *= 1.0f + 4.0f * skill.m_level / 100.0f;
+                float preScaleFactor = 1.0f;
+                float postScaleFactor = 1.0f;
+
+                // Adjust skill growth curve for some skills
+                switch (skillType)
+                {
+                    case Skills.SkillType.Jump:
+                    case Skills.SkillType.Run:
+                        preScaleFactor = 0.5f;
+                        break;
+                    case Skills.SkillType.Sneak:
+                    case Skills.SkillType.Swim:
+                        postScaleFactor = 1.5f;
+                        break;
+                    case Skills.SkillType.Fishing:
+                        preScaleFactor = 0.9f;
+                        postScaleFactor = 2.0f;
+                        break;
+                    case Skills.SkillType.Bows:
+                        preScaleFactor = 1.2f;
+                        break;
+                }
+
+                if( ___m_skillData.TryGetValue(skillType, out Skills.Skill skill) )
+                    factor *= (1.0f + (4.0f * skill.m_level / 100.0f) * preScaleFactor) * postScaleFactor;
             }
         }
 
@@ -108,17 +131,6 @@ namespace PrivateGameplayMods
                 if ( !hit.HaveAttacker() || !hit.GetAttacker().IsPlayer() )
                     Factor *= 0.5f;
                 hit.m_damage.Modify(Factor);
-/*                hit.m_damage.m_damage *= Factor;
-                hit.m_damage.m_blunt *= Factor;
-                hit.m_damage.m_chop *= Factor;
-                hit.m_damage.m_fire *= Factor;
-                hit.m_damage.m_frost *= Factor;
-                hit.m_damage.m_lightning *= Factor;
-                hit.m_damage.m_slash *= Factor;
-                hit.m_damage.m_spirit *= Factor;
-                hit.m_damage.m_poison *= Factor;
-                hit.m_damage.m_pickaxe *= Factor;
-                hit.m_damage.m_pierce *= Factor;*/
             }
         }
 
@@ -228,6 +240,8 @@ namespace PrivateGameplayMods
                                     }
                                 }
                             }
+                            if ( !recipe.m_enabled && (recipe.m_item != null) )
+                                ZLog.Log("Disabled recipe for " + recipe.m_item.name);
                         }
                     }
 
@@ -240,6 +254,10 @@ namespace PrivateGameplayMods
 
                 Object[] array = Resources.FindObjectsOfTypeAll(typeof(GameObject));
                 List<Pickable> PlantPickables = new List<Pickable>();
+                List<GameObject> AddToWorkbench = new List<GameObject>();
+//                List<Fish> Fishes = new List<Fish>();
+                PieceTable BuildPieces = null;
+
                 for(int i = 0; i < array.Length; i++)
                 {
                     GameObject gameObject = (GameObject)array[i];
@@ -271,18 +289,72 @@ namespace PrivateGameplayMods
                         if ( pickable != null && pickable.m_itemPrefab != null 
                             && (pickable.m_itemPrefab.name == "Flax" || pickable.m_itemPrefab.name == "Barley") )
                             PlantPickables.Add(pickable);
+
+                        Fish fish = gameObject.GetComponent<Fish>();
+                        if ( fish != null && fish.m_extraDrops != null && fish.m_extraDrops.m_drops != null )
+                            fish.m_extraDrops.m_dropChance += (1.0f - fish.m_extraDrops.m_dropChance) * 0.25f;
                     }
 
-                    if ( _EnableItemLevels.Value )
+                    ItemDrop itemDrop = gameObject.GetComponent<ItemDrop>();
+                    if ( (itemDrop != null) && (itemDrop.m_itemData != null) && (itemDrop.m_itemData.m_shared != null) )
                     {
-                        ItemDrop itemDrop = gameObject.GetComponent<ItemDrop>();
-                        if( (itemDrop != null) && (itemDrop.m_itemData != null) && (itemDrop.m_itemData.m_shared != null) && (itemDrop.m_itemData.m_shared.m_maxQuality > 1) )
-                            itemDrop.m_itemData.m_shared.m_maxQuality += 10;
+                        if ( _EnableItemLevels.Value )
+                        {
+                            if ( itemDrop.m_itemData.m_shared.m_maxQuality > 1 )
+                                itemDrop.m_itemData.m_shared.m_maxQuality += 10;
+                        }
+                        if ( (gameObject.name == "Hammer") && (itemDrop.m_itemData.m_shared.m_buildPieces != null) )
+                            BuildPieces = itemDrop.m_itemData.m_shared.m_buildPieces;
                     }
 
- 
+                    Piece piece = gameObject.GetComponent<Piece>();
+                    if ( piece != null )
+                    {
+                        if ( !piece.m_enabled )
+                            piece.m_enabled = true;
+                        if ( piece.m_canBeRemoved && (piece.m_destroyedLootPrefab == null) )
+                        {
+                            // Black Marble pieces
+                            if ( gameObject.name == "blackmarble_2x2_enforced"
+                                || gameObject.name == "piece_dvergr_wood_door"
+                                || gameObject.name == "piece_dvergr_pole"
+                                || gameObject.name == "stone_floor"
+                                || gameObject.name == "blackmarble_slope_1x2"
+                                || gameObject.name == "blackmarble_base_2"
+                                || gameObject.name == "blackmarble_column_3"
+                                || gameObject.name == "blackmarble_floor_large"
+                                || gameObject.name.StartsWith("blackmarble_head")
+                                || gameObject.name == "blackmarble_out_2"
+                                || gameObject.name.StartsWith("blackmarble_stair_")
+                                || gameObject.name.StartsWith("blackmarble_tile") )
+                                AddToWorkbench.Add(gameObject);
+                            if ( gameObject.name == "crystal_wall_1x1"
+                                || gameObject.name == "piece_dvergr_wood_door"
+                                || gameObject.name == "piece_dvergr_pole")
+                                piece.m_category = Piece.PieceCategory.Furniture;
+                            if ( gameObject.name == "blackmarble_slope_1x2"
+                                || gameObject.name == "blackmarble_base_2"
+                                || gameObject.name == "blackmarble_column_3"
+                                || gameObject.name == "blackmarble_floor_large"
+                                || gameObject.name.StartsWith("blackmarble_head")
+                                || gameObject.name == "blackmarble_out_2"
+                                || gameObject.name.StartsWith("blackmarble_stair_")
+                                || gameObject.name.StartsWith("blackmarble_tile") )
+                                piece.m_category = Piece.PieceCategory.Misc;
+                        }
+//                      ZLog.Log("Disabled piece: " + piece.name);
+                    }
                 }
                 AddMonsterDrops();
+
+                if ( BuildPieces != null )
+                {
+                    foreach ( GameObject addPiece in AddToWorkbench )
+                    {
+                        if ( BuildPieces.m_pieces.IndexOf(addPiece) < 0 )
+                            BuildPieces.m_pieces.Add(addPiece);
+                    }
+                }
 
                 foreach( Pickable pickable in PlantPickables )
                 {
@@ -312,8 +384,8 @@ namespace PrivateGameplayMods
 
         //
         // Detect mountains
-        //
-        [HarmonyPatch(typeof(WorldGenerator), "FindMountains")]
+        // FIXME!
+/*        [HarmonyPatch(typeof(WorldGenerator), "FindMountains")]
         private class MountainDetectorPatch
         {
             [HarmonyPostfix]
@@ -327,7 +399,7 @@ namespace PrivateGameplayMods
                         ZLog.Log("Large Mountain at " + (int)(Location.x) + "," + (int)(Location.y) + " => " + (int)H);
                 }
             }
-        }
+        }*/
 
         //
         // Piece awake mods:
@@ -387,6 +459,37 @@ namespace PrivateGameplayMods
             {
                 if ( __instance )
                     __instance.m_maxPlaceDistance = _SetPlaceDistance.Value;
+            }
+        }
+
+        //
+        // Fish pickup patch
+        //
+        [HarmonyPatch(typeof(Fish), "Interact")]
+        private class FishPickupPatch
+        {
+            [HarmonyPostfix]
+            private static void InteractPostfix( ref Fish __instance, ref bool __result, Humanoid character)
+            {
+                if ( !__result && (__instance != null) && (character != null) )
+                {
+                    if ( __instance.Pickup(character) )
+                        __result = true;
+                }
+            }
+        }
+
+        //
+        // Fish attract patch
+        //
+        [HarmonyPatch(typeof(Fish), "RandomizeWaypoint")]
+        private class FishAttractPatch
+        {
+            [HarmonyPostfix]
+            private static void RandomizeWaypointPostfix( ref bool __result, ref FishingFloat ___m_waypointFF, ref float ___m_swimTimer)
+            {
+                if ( __result && (___m_waypointFF != null) )
+                    ___m_swimTimer *= 2.0f;
             }
         }
 
