@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace LeanNet
 {
-	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "0.0.1")]
+	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "0.0.2")]
 	public class LeanNet : BaseUnityPlugin
 	{
 		// Config
@@ -21,12 +21,14 @@ namespace LeanNet
 		private Harmony _harmony;
 
 		// Global State
+		public static double NetTime = 0.0f;
+		public static float DeltaTimeFixedPhysics = 0.02f;
 		public static float DeltaTimePhysics = 0.01f;
 		public static float Vec3CullSizeSq = 0.00025f;
 
 		private void Awake()
 		{
-			NetRatePhysics = Config.Bind("Global", "NetRatePhysics", 4.0f, "Update frequency for physics objects, such as dropped items and projectiles.");
+			NetRatePhysics = Config.Bind("Global", "NetRatePhysics", 8.0f, "Update frequency for physics objects, such as dropped items and projectiles.");
 			NetRateNPC = Config.Bind("Global", "NetRateNPC", 8.0f, "Update frequency for NPC's.");
 			Vec3CullSize = Config.Bind("Global", "Vec3CullSize", 0.05f, "Cull Vector3 updates if the magnitude of the offset is smaller than this.");
 
@@ -34,17 +36,38 @@ namespace LeanNet
 		}
 
 
-		public static void UpdateState()
+		public static void UpdateState( float DeltaTime )
 		{
-			// Keep config values sane
-			if ( NetRatePhysics.Value < 2.0f )
-				NetRatePhysics.Value = 2.0f;
-			if ( NetRateNPC.Value < 2.0f )
-				NetRateNPC.Value = 2.0f;
+			// Keep config values sane to prevent ruining other player's experience
+			if ( NetRatePhysics.Value < 4.0f )
+				NetRatePhysics.Value = 4.0f;
+			if ( NetRateNPC.Value < 4.0f )
+				NetRateNPC.Value = 4.0f;
 			if ( Vec3CullSize.Value > 0.2f )
 				Vec3CullSize.Value = 0.2f;
 
 			Vec3CullSizeSq = Vec3CullSize.Value * Vec3CullSize.Value;
+
+			// Update internal accumulator
+			NetTime += DeltaTime;
+			if ( DeltaTime > 100.0f )
+				NetTime -= DeltaTime;
+		}
+
+		//
+		// Calculates a somewhat unique, incremental time for a ZDO
+		// This value will always be less than 200
+		//
+		public static double GetZDOTime( ZDO zDO )
+		{
+			return NetTime + 0.023 * (double)(zDO.m_uid.ID & 4095);
+		}
+
+		public static bool ShouldUpdateZDO( ZDO zDO, float NetRate, float DeltaTime )
+		{
+			double TimeBase = GetZDOTime(zDO);
+			double TimeNext = TimeBase + DeltaTime;
+			return Mathf.RoundToInt((float)(TimeBase*NetRate)) != Mathf.RoundToInt((float)(TimeNext*NetRate));
 		}
 
 
@@ -77,10 +100,10 @@ namespace LeanNet
 			private static void Prefix()
 			{
 				float T = UnityEngine.Time.fixedDeltaTime;
-				DeltaTimePhysics = T;
+				DeltaTimeFixedPhysics = T;
 
 				ZDORevisionFreeze.Reset();
-				UpdateState();
+				UpdateState(0.0f);
 			}
 		}
 		[HarmonyPatch(typeof(MonoUpdaters), "LateUpdate")]
@@ -92,7 +115,7 @@ namespace LeanNet
 				DeltaTimePhysics = T;
 
 				ZDORevisionFreeze.Reset();
-				UpdateState();
+				UpdateState(T);
 			}
 		}
 
@@ -167,7 +190,7 @@ namespace LeanNet
 		//
 		// Physics objects sync
 		//
-		[HarmonyPatch(typeof(ZSyncTransform), "OwnerSync")]
+		[HarmonyPatch(typeof(ZSyncTransform), "CustomLateUpdate")]
 		public class PhysicsSyncReducer
 		{
 			static bool Freezing = false;
@@ -180,24 +203,20 @@ namespace LeanNet
 
 				float UpdateRate = NetRatePhysics.Value;
 
-				// Generally characters have this, double rate (for now)
-				if ( __instance.m_syncRotation ) 
+				// If we can't update position, increase cadence of velocity updates
+				if ( !__instance.m_syncPosition )
 					UpdateRate *= 2.0f;
-
-				float RandomValue = UnityEngine.Random.value;
 
 				// Force an update every 2 seconds
 				// Otherwise run updates as specified via config.
-				if ( RandomValue < DeltaTimePhysics * 0.5f ) 
-				{
-					Forcing = true;
+				ZDO zDO = ___m_nview.GetZDO();
+				Forcing = ShouldUpdateZDO(zDO, 0.5f, DeltaTimePhysics);
+				Freezing = !Forcing && !ShouldUpdateZDO(zDO, UpdateRate, DeltaTimePhysics);
+
+				if ( Forcing ) 
 					ZDORevisionFreeze.Force++;
-				}
-				else if ( RandomValue > DeltaTimePhysics * UpdateRate )
-				{
-					Freezing = true;
+				if ( Freezing )
 					ZDORevisionFreeze.Freeze++;
-				}
 			}
 
 			private static void Postfix( ref ZSyncTransform __instance, ref ZNetView ___m_nview )
@@ -258,20 +277,16 @@ namespace LeanNet
 
 				if ( !__instance.IsPlayer() )
 				{
-					float RandomValue = UnityEngine.Random.value;
-
 					// Force an update every 2 seconds
 					// Otherwise run updates as specified via config.
-					if ( RandomValue < DeltaTimePhysics * 0.5f )
-					{
-						Forcing = true;
+					ZDO zDO = ___m_nview.GetZDO();
+					Forcing = ShouldUpdateZDO(zDO, 0.5f, DeltaTimePhysics);
+					Freezing = !Forcing && !ShouldUpdateZDO(zDO, NetRateNPC.Value, DeltaTimePhysics);
+
+					if ( Forcing )
 						ZDORevisionFreeze.Force++;
-					}
-					else if ( RandomValue > DeltaTimePhysics * NetRateNPC.Value )
-					{
-						Freezing = true;
+					if ( Freezing )
 						ZDORevisionFreeze.Freeze++;
-					}
 				}
 			}
 
@@ -296,6 +311,7 @@ namespace LeanNet
 			[HarmonyPatch("UpdateGroundTilt")]
 			private static void UpdateGroundTiltPrefix( float dt )
 			{
+				// Do not force a ZDO update for ground tilt changes
 				ZDORevisionFreeze.Freeze++;
 			}
 
