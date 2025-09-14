@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace LeanNet
 {
-	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "0.0.2")]
+	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "0.0.3")]
 	public class LeanNet : BaseUnityPlugin
 	{
 		// Config
@@ -198,8 +198,15 @@ namespace LeanNet
 
 			private static void Prefix( ref ZSyncTransform __instance, ref ZNetView ___m_nview )
 			{
+				float Value;
+				ZDO zDO = ___m_nview.GetZDO();
+
+				// Do not limit rate on ships, it degrades experience too much
+				if ( zDO.GetFloat(ZDOVars.s_rudder, out Value) )
+					return;
+
 				// Log util
-				// ZDOUpdateLogger.ZDOPreUpdate(___m_nview.GetZDO());
+				// ZDOUpdateLogger.ZDOPreUpdate(zDO);
 
 				float UpdateRate = NetRatePhysics.Value;
 
@@ -209,7 +216,6 @@ namespace LeanNet
 
 				// Force an update every 2 seconds
 				// Otherwise run updates as specified via config.
-				ZDO zDO = ___m_nview.GetZDO();
 				Forcing = ShouldUpdateZDO(zDO, 0.5f, DeltaTimePhysics);
 				Freezing = !Forcing && !ShouldUpdateZDO(zDO, UpdateRate, DeltaTimePhysics);
 
