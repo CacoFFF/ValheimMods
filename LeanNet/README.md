@@ -6,6 +6,9 @@ Install with [BepInEx](https://valheim.thunderstore.io/package/denikson/BepInExP
 
 ## Changelog
 
+### 0.0.4
+  * Added global toggle to enable/disable the mod's functionality.
+
 ### 0.0.3
   * Ship objects are no longer rate limited, this helps prevent degradation
   of gameplay experience.

@@ -14,6 +14,7 @@ namespace LeanNet
 	public class LeanNet : BaseUnityPlugin
 	{
 		// Config
+		public static ConfigEntry<bool> Enabled;
 		public static ConfigEntry<float> NetRatePhysics;
 		public static ConfigEntry<float> NetRateNPC;
 		public static ConfigEntry<float> Vec3CullSize;
@@ -28,6 +29,7 @@ namespace LeanNet
 
 		private void Awake()
 		{
+			Enabled = Config.Bind("Global", "Enabled", true, "Global toggle, this option does not require a game restart.");
 			NetRatePhysics = Config.Bind("Global", "NetRatePhysics", 8.0f, "Update frequency for physics objects, such as dropped items and projectiles.");
 			NetRateNPC = Config.Bind("Global", "NetRateNPC", 8.0f, "Update frequency for NPC's.");
 			Vec3CullSize = Config.Bind("Global", "Vec3CullSize", 0.05f, "Cull Vector3 updates if the magnitude of the offset is smaller than this.");
@@ -52,6 +54,10 @@ namespace LeanNet
 			NetTime += DeltaTime;
 			if ( DeltaTime > 100.0f )
 				NetTime -= DeltaTime;
+
+			// Reset temporary state
+			ZDORevisionFreeze.Freeze = 0;
+			ZDORevisionFreeze.Force = 0;
 		}
 
 		//
@@ -154,6 +160,9 @@ namespace LeanNet
 		{
 			private static bool Prefix( ref ZDO __instance, int hash, Vector3 value )
 			{
+				if ( Enabled.Value == false)
+					return true;
+
 				// If this ZDO is being updated, allow setting the value regardless.
 				if ( ZDORevisionFreeze.IsForcing() )
 					return true;
@@ -172,6 +181,9 @@ namespace LeanNet
 		{
 			private static bool Prefix( ref ZDO __instance, int hash, Quaternion value )
 			{
+				if ( Enabled.Value == false )
+					return true;
+
 				// If this ZDO is being updated, allow setting the value regardless.
 				if ( ZDORevisionFreeze.IsForcing() )
 					return true;
@@ -198,6 +210,9 @@ namespace LeanNet
 
 			private static void Prefix( ref ZSyncTransform __instance, ref ZNetView ___m_nview )
 			{
+				if ( Enabled.Value == false )
+					return;
+
 				float Value;
 				ZDO zDO = ___m_nview.GetZDO();
 
@@ -279,6 +294,9 @@ namespace LeanNet
 			[HarmonyPrefix]
 			private static void CustomFixedUpdatePrefix( ref Character __instance, float dt, ref ZNetView ___m_nview )
 			{
+				if ( Enabled.Value == false )
+					return;
+
 				// ZDOUpdateLogger.ZDOPreUpdate(___m_nview.GetZDO());
 
 				if ( !__instance.IsPlayer() )
@@ -317,6 +335,9 @@ namespace LeanNet
 			[HarmonyPatch("UpdateGroundTilt")]
 			private static void UpdateGroundTiltPrefix( float dt )
 			{
+				if ( Enabled.Value == false )
+					return;
+
 				// Do not force a ZDO update for ground tilt changes
 				ZDORevisionFreeze.Freeze++;
 			}
@@ -325,6 +346,9 @@ namespace LeanNet
 			[HarmonyPatch("UpdateGroundTilt")]
 			private static void UpdateGroundTiltPostfix( ref Character __instance )
 			{
+				if ( Enabled.Value == false )
+					return;
+
 				ZDORevisionFreeze.Freeze--;
 			}
 
@@ -332,6 +356,9 @@ namespace LeanNet
 			[HarmonyPatch("SyncVelocity")]
 			private static bool SyncVelocityPrefix( ref Rigidbody ___m_body, ref Vector3 ___m_bodyVelocityCached )
 			{
+				if ( Enabled.Value == false )
+					return true;
+
 				// If this ZDO is being updated, allow setting the value regardless.
 				if ( ZDORevisionFreeze.IsForcing() )
 					return true;
