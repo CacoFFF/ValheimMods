@@ -1,0 +1,8 @@
+{
+  "name": "LeanNet",
+  "version_number": "1.0.0",
+  "author": "CacoFFF",
+  "description": "Network usage reduction plugin (client side).",
+  "website_url": "https://github.com/CacoFFF/ValheimMods/tree/main/LeanNet",
+  "dependencies": [ "denikson-BepInExPack_Valheim-5.4.2333" ]
+}

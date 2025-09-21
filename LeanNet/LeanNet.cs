@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace LeanNet
 {
-	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "0.0.3")]
+	[BepInPlugin("CacoFFF.valheim.LeanNet", "Lean Networking", "1.0.0")]
 	public class LeanNet : BaseUnityPlugin
 	{
 		// Config
