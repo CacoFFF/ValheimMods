@@ -168,9 +168,13 @@ namespace LeanNet
 					return true;
 
 				// Do not update Vectors3 if changes are below the size threshold
-				Vector3 Offset = __instance.GetVec3(hash, value) - value;
-				if ( Offset.sqrMagnitude < Vec3CullSizeSq )
-					return false;
+				Vector3 CurValue;
+				if ( __instance.GetVec3(hash, out CurValue) )
+				{
+					Vector3 Offset = CurValue - value;
+					if ( Offset.sqrMagnitude < Vec3CullSizeSq )
+						return false;
+				}
 
 				return true;
 			}

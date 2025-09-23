@@ -1,3 +1,6 @@
+### 1.0.1
+  * Fix a small issue with ZDO vec3 culling when the property has no initial data.
+
 ### 1.0.0
   * Public release
 
